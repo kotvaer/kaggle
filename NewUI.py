@@ -7,7 +7,7 @@ from PyQt6.QtGui import QPixmap, QFont, QImage, QColor
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QLabel, QFileDialog,
     QHeaderView, QTableWidgetItem, QFormLayout, QSlider,
-    QDoubleSpinBox, QHBoxLayout, QCheckBox, QPushButton
+    QDoubleSpinBox, QHBoxLayout, QCheckBox, QPushButton, QComboBox
 )
 from qfluentwidgets import (
     FluentWindow, NavigationItemPosition, MessageBox,
@@ -162,6 +162,149 @@ class VideoDetectionThread(QThread):
             else:
                 break
             time.sleep(0.03) # 控制帧率，避免过快
+
+        cap.release()
+        self.detectionFinished.emit()
+
+# ========================== 摄像头检测界面 ==========================
+class CameraDetectionInterface(ScrollArea):
+    processedFrameReady = Signal(QImage)
+    detectionFinished = Signal()
+
+    def __init__(self, parent: Optional[QWidget] = None):
+        super().__init__(parent)
+        self.setObjectName("CameraDetectionInterface")
+        self.view = QWidget(self)
+        self.setWidget(self.view)
+        self.setWidgetResizable(True)
+
+        self.cameraComboBox: QComboBox
+        self.videoDisplayLabel: QLabel
+        self.startButton: PrimaryPushButton
+        self.stopButton: PrimaryPushButton
+
+        self.detection_model = None
+        self.detection_thread = None
+        self.available_cameras = self.get_available_cameras()
+
+        self.initUI()
+        self.loadDetectionModel()
+
+    def loadDetectionModel(self):
+        path = 'models/best.pt'  # 确保模型文件路径正确
+        try:
+            self.detection_model = YOLO(path, task='detect')
+        except Exception as e:
+            MessageBox("错误", f"加载模型失败: {e}", self).exec()
+
+    def get_available_cameras(self):
+        index = 0
+        cameras = []
+        while True:
+            cap = cv2.VideoCapture(index)
+            if not cap.read()[0]:
+                break
+            else:
+                cameras.append(index)
+            cap.release()
+            index += 1
+        return cameras
+
+    def initUI(self):
+        layout = QVBoxLayout(self.view)
+
+        self.cameraComboBox = QComboBox(self)
+        for camera_index in self.available_cameras:
+            self.cameraComboBox.addItem(f"摄像头 {camera_index}", camera_index)
+        if not self.available_cameras:
+            self.cameraComboBox.addItem("未检测到摄像头", -1)
+            self.cameraComboBox.setEnabled(False)
+        layout.addWidget(self.cameraComboBox)
+
+        self.videoDisplayLabel = QLabel(self)
+        self.videoDisplayLabel.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.videoDisplayLabel.setStyleSheet("""
+            background-color: #333;
+            color: #fff;
+            border-radius: 8px;
+        """)
+        self.videoDisplayLabel.setMinimumSize(640, 480)
+        layout.addWidget(self.videoDisplayLabel)
+
+        controlsLayout = QHBoxLayout()
+        self.startButton = PrimaryPushButton("开始检测", self)
+        self.startButton.clicked.connect(self.startCameraDetection) # type: ignore
+        self.startButton.setEnabled(bool(self.available_cameras))
+        controlsLayout.addWidget(self.startButton)
+
+        self.stopButton = PrimaryPushButton("停止检测", self)
+        self.stopButton.clicked.connect(self.stopCameraDetection) # type: ignore
+        self.stopButton.setEnabled(False)
+        controlsLayout.addWidget(self.stopButton)
+        layout.addLayout(controlsLayout)
+
+    def startCameraDetection(self):
+        selected_camera_index = self.cameraComboBox.currentData()
+        if selected_camera_index != -1 and self.detection_model:
+            self.startButton.setEnabled(False)
+            self.stopButton.setEnabled(True)
+            self.detection_thread = CameraDetectionThread(selected_camera_index, self.detection_model)
+            self.detection_thread.processedFrameReady.connect(self.updateVideoFrame) # type: ignore
+            self.detection_thread.detectionFinished.connect(self.cameraDetectionFinished) # type: ignore
+            self.detection_thread.start()
+
+    def stopCameraDetection(self):
+        if self.detection_thread and self.detection_thread.isRunning():
+            self.detection_thread.stop_flag = True
+            self.startButton.setEnabled(True)
+            self.stopButton.setEnabled(False)
+
+    def updateVideoFrame(self, frame: QImage):
+        pixmap = QPixmap.fromImage(frame)
+        scaled_pixmap = pixmap.scaled(
+            self.videoDisplayLabel.size(),
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation
+        )
+        self.videoDisplayLabel.setPixmap(scaled_pixmap)
+
+    def cameraDetectionFinished(self):
+        self.startButton.setEnabled(True)
+        self.stopButton.setEnabled(False)
+        self.videoDisplayLabel.setText("摄像头检测已停止")
+        self.detection_thread = None
+
+# ========================== 摄像头检测线程 ==========================
+class CameraDetectionThread(QThread):
+    processedFrameReady = Signal(QImage)
+    detectionFinished = Signal()
+
+    def __init__(self, camera_index, model):
+        super().__init__()
+        self.camera_index = camera_index
+        self.model = model
+        self.stop_flag = False
+
+    def run(self):
+        cap = cv2.VideoCapture(self.camera_index)
+        if not cap.isOpened():
+            print(f"Error: Could not open camera at index {self.camera_index}")
+            self.detectionFinished.emit()
+            return
+
+        while not self.stop_flag and cap.isOpened():
+            success, frame = cap.read()
+            if success:
+                results = self.model(frame)
+                annotated_frame = results[0].plot()
+
+                height, width, channel = annotated_frame.shape
+                bytes_per_line = 3 * width
+                q_image = QImage(annotated_frame.data, width, height, bytes_per_line, QImage.Format.Format_RGB888).rgbSwapped()
+                self.processedFrameReady.emit(q_image)
+            else:
+                break
+            time.sleep(0.03) # 控制帧率
 
         cap.release()
         self.detectionFinished.emit()
@@ -368,12 +511,13 @@ class MainWindow(FluentWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("智能焊缝检测系统")
-        self.resize(1400, 800)
+        self.resize(1200, 800)
         setTheme(Theme.LIGHT)
 
         # 初始化界面
         self.detectionInterface = DetectionInterface()
         self.videoDetectionInterface = VideoDetectionInterface() # 创建视频检测界面
+        self.cameraDetectionInterface = CameraDetectionInterface() # 创建摄像头检测界面
         self.settingsInterface = QWidget()
         self.settingsInterface.setObjectName("SettingsInterface")
 
@@ -387,6 +531,11 @@ class MainWindow(FluentWindow):
             self.videoDetectionInterface,
             FIF.VIDEO,
             "视频检测"
+        )
+        self.addSubInterface(
+            self.cameraDetectionInterface,
+            FIF.CAMERA,
+            "实时检测"
         )
         self.addSubInterface(
             self.settingsInterface,
