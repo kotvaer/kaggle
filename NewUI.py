@@ -1,9 +1,9 @@
 import sys
 import time
-from typing import Optional, Dict
+from typing import Optional, Dict, Tuple
 
 from PyQt6.QtCore import Qt, QThread, pyqtSignal as Signal
-from PyQt6.QtGui import QPixmap, QFont, QImage
+from PyQt6.QtGui import QPixmap, QFont, QImage, QColor
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QLabel, QFileDialog,
     QHeaderView, QTableWidgetItem, QFormLayout, QSlider,
@@ -19,9 +19,12 @@ import torch
 from ultralytics import YOLO
 import cv2
 import numpy as np
+import dill
 
 # ========================== 检测界面 ==========================
 class DetectionInterface(ScrollArea):
+    detectionResultReady = Signal(list)  # 新的信号，用于发送检测结果列表
+
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self.setObjectName("DetectionInterface")
@@ -34,6 +37,7 @@ class DetectionInterface(ScrollArea):
         self.imageLabel: QLabel
         self.progressBar: IndeterminateProgressBar
         self.detection_model = None  # 用于存储加载的 YOLO 模型
+        self.resultTable: TableWidget  # 用于显示检测结果表格
 
         self.initUI()
         self.loadDetectionModel()
@@ -64,6 +68,12 @@ class DetectionInterface(ScrollArea):
         """)
         self.imageLabel.setMinimumSize(600, 400)
 
+        # 检测结果表格
+        self.resultTable = TableWidget(self)
+        self.resultTable.setColumnCount(2)
+        self.resultTable.setHorizontalHeaderLabels(["缺陷类型", "置信度"])
+        self.resultTable.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+
         # 进度条
         self.progressBar = IndeterminateProgressBar(self)
         self.progressBar.hide()
@@ -72,6 +82,9 @@ class DetectionInterface(ScrollArea):
         layout.addWidget(self.uploadBtn)
         layout.addSpacing(15)
         layout.addWidget(self.imageLabel)
+        layout.addSpacing(15)
+        layout.addWidget(StrongBodyLabel("检测结果:"))
+        layout.addWidget(self.resultTable)
         layout.addWidget(self.progressBar)
 
     def uploadImage(self):
@@ -80,7 +93,8 @@ class DetectionInterface(ScrollArea):
         )
         if path:
             self.loadImage(path)
-            self.runDetection(path)
+            detection_results = self.runDetection(path)
+            self.displayDetectionResults(detection_results)
 
     def loadImage(self, path: str):
         pixmap = QPixmap(path)
@@ -95,10 +109,12 @@ class DetectionInterface(ScrollArea):
         )
         self.imageLabel.setPixmap(scaled)
 
-    def runDetection(self, image_path: str):
+    def runDetection(self, image_path: str) -> list:
+        results_list = []
+
         if self.detection_model is None:
             MessageBox("错误", "检测模型尚未加载", self).exec()
-            return
+            return results_list
 
         self.progressBar.show()
         try:
@@ -118,10 +134,32 @@ class DetectionInterface(ScrollArea):
             )
             self.imageLabel.setPixmap(scaled_pixmap)
 
+            # 提取检测结果
+            if results and results[0].boxes and len(results[0].boxes.conf) > 0:
+                for i in range(len(results[0].boxes.conf)):
+                    confidence = results[0].boxes.conf[i].item()
+                    class_id = results[0].boxes.cls[i].item()
+                    label = results[0].names[class_id]
+                    results_list.append({"label": label, "confidence": confidence})
+
+            self.detectionResultReady.emit(results_list) # 发送信号
+
         except Exception as e:
             MessageBox("错误", f"检测过程中发生错误: {e}", self).exec()
         finally:
             self.progressBar.hide()
+            return results_list
+
+    def displayDetectionResults(self, results: list):
+        self.resultTable.clearContents()
+        self.resultTable.setRowCount(len(results))
+
+        for row, result in enumerate(results):
+            label_item = QTableWidgetItem(result["label"])
+            confidence_item = QTableWidgetItem(f"{result['confidence']:.2f}")
+            confidence_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.resultTable.setItem(row, 0, label_item)
+            self.resultTable.setItem(row, 1, confidence_item)
 
 # ========================== 主窗口 ==========================
 class MainWindow(FluentWindow):
