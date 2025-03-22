@@ -7,7 +7,7 @@ from PyQt6.QtGui import QPixmap, QFont, QImage, QColor
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QLabel, QFileDialog,
     QHeaderView, QTableWidgetItem, QFormLayout, QSlider,
-    QDoubleSpinBox, QHBoxLayout
+    QDoubleSpinBox, QHBoxLayout, QCheckBox
 )
 from qfluentwidgets import (
     FluentWindow, NavigationItemPosition, MessageBox,
@@ -39,6 +39,9 @@ class DetectionInterface(ScrollArea):
         self.progressBar: IndeterminateProgressBar
         self.detection_model = None  # 用于存储加载的 YOLO 模型
         self.resultTable: TableWidget  # 用于显示检测结果表格
+        self.showDetectedOnlyCheckBox: QCheckBox  # 新增的复选框
+
+        self.show_detected_only = False  # 默认不开启只显示检测结果
 
         self.initUI()
         self.loadDetectionModel()
@@ -47,8 +50,6 @@ class DetectionInterface(ScrollArea):
         path = 'models/best.pt'  # 确保模型文件路径正确
         try:
             self.detection_model = YOLO(path, task='detect')
-            print("模型加载成功，检测类别如下:")
-            print(self.detection_model.names)  # 打印检测类别
         except Exception as e:
             MessageBox("错误", f"加载模型失败: {e}", self).exec()
 
@@ -86,6 +87,11 @@ class DetectionInterface(ScrollArea):
         self.detectedImageLabel.setMinimumSize(600, 400)
         imageLayout.addWidget(self.detectedImageLabel)
 
+        # 只显示检测结果复选框
+        self.showDetectedOnlyCheckBox = QCheckBox("仅显示检测结果", self)
+        self.showDetectedOnlyCheckBox.setChecked(False)  # 默认不选中
+        self.showDetectedOnlyCheckBox.toggled.connect(self.toggleShowDetectedOnly) # type: ignore
+
         # 检测结果表格
         self.resultTable = TableWidget(self)
         self.resultTable.setColumnCount(2)
@@ -99,11 +105,17 @@ class DetectionInterface(ScrollArea):
         # 布局组装
         layout.addWidget(self.uploadBtn)
         layout.addSpacing(15)
+        layout.addWidget(self.showDetectedOnlyCheckBox) # 添加复选框
+        layout.addSpacing(10)
         layout.addLayout(imageLayout)  # 添加水平布局
         layout.addSpacing(15)
         layout.addWidget(StrongBodyLabel("检测结果:"))
         layout.addWidget(self.resultTable)
         layout.addWidget(self.progressBar)
+
+    def toggleShowDetectedOnly(self, checked: bool):
+        self.show_detected_only = checked
+        self.updateImageDisplay()
 
     def uploadImage(self):
         path, _ = QFileDialog.getOpenFileName(
@@ -114,6 +126,7 @@ class DetectionInterface(ScrollArea):
             detection_results, detected_image = self.runDetection(path)
             self.displayDetectedImage(detected_image)
             self.displayDetectionResults(detection_results)
+            self.updateImageDisplay() # 初始加载后也更新显示
 
     def loadOriginalImage(self, path: str):
         pixmap = QPixmap(path)
@@ -127,6 +140,8 @@ class DetectionInterface(ScrollArea):
             Qt.TransformationMode.SmoothTransformation
         )
         self.originalImageLabel.setPixmap(scaled)
+        if not self.show_detected_only:
+            self.originalImageLabel.show()
         self.detectedImageLabel.clear() # 清空检测后的图片
 
     def displayDetectedImage(self, detected_image: Optional[np.ndarray]):
@@ -142,6 +157,7 @@ class DetectionInterface(ScrollArea):
                 Qt.TransformationMode.SmoothTransformation
             )
             self.detectedImageLabel.setPixmap(scaled_pixmap)
+            self.detectedImageLabel.show()
         else:
             self.detectedImageLabel.setText("未检测到图片")
             self.detectedImageLabel.setStyleSheet("""
@@ -150,6 +166,15 @@ class DetectionInterface(ScrollArea):
                 border-radius: 8px;
                 color: gray;
             """)
+            self.detectedImageLabel.show()
+
+    def updateImageDisplay(self):
+        if self.show_detected_only:
+            self.originalImageLabel.hide()
+            self.detectedImageLabel.show()
+        else:
+            self.originalImageLabel.show()
+            self.detectedImageLabel.show()
 
 
     def runDetection(self, image_path: str) -> Tuple[list, Optional[np.ndarray]]:
@@ -198,7 +223,7 @@ class MainWindow(FluentWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("智能焊缝检测系统")
-        self.resize(1200, 800)
+        self.resize(1400, 800)
         setTheme(Theme.LIGHT)
 
         # 初始化界面
