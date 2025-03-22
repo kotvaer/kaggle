@@ -7,7 +7,7 @@ from PyQt6.QtGui import QPixmap, QFont, QImage, QColor
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QLabel, QFileDialog,
     QHeaderView, QTableWidgetItem, QFormLayout, QSlider,
-    QDoubleSpinBox
+    QDoubleSpinBox, QHBoxLayout
 )
 from qfluentwidgets import (
     FluentWindow, NavigationItemPosition, MessageBox,
@@ -34,7 +34,8 @@ class DetectionInterface(ScrollArea):
 
         # 组件声明
         self.uploadBtn: PrimaryPushButton
-        self.imageLabel: QLabel
+        self.originalImageLabel: QLabel  # 用于显示原图
+        self.detectedImageLabel: QLabel  # 用于显示检测后的图片
         self.progressBar: IndeterminateProgressBar
         self.detection_model = None  # 用于存储加载的 YOLO 模型
         self.resultTable: TableWidget  # 用于显示检测结果表格
@@ -46,6 +47,8 @@ class DetectionInterface(ScrollArea):
         path = 'models/best.pt'  # 确保模型文件路径正确
         try:
             self.detection_model = YOLO(path, task='detect')
+            print("模型加载成功，检测类别如下:")
+            print(self.detection_model.names)  # 打印检测类别
         except Exception as e:
             MessageBox("错误", f"加载模型失败: {e}", self).exec()
 
@@ -58,15 +61,30 @@ class DetectionInterface(ScrollArea):
         self.uploadBtn.setIcon(FIF.PHOTO)
         self.uploadBtn.clicked.connect(self.uploadImage)  # type: ignore
 
-        # 图片显示
-        self.imageLabel = QLabel(self)
-        self.imageLabel.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.imageLabel.setStyleSheet("""
+        # 图片显示区域（水平布局）
+        imageLayout = QHBoxLayout()
+
+        # 原图显示标签
+        self.originalImageLabel = QLabel(self)
+        self.originalImageLabel.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.originalImageLabel.setStyleSheet("""
+            background-color: #e0e0e0;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        """)
+        self.originalImageLabel.setMinimumSize(600, 400)
+        imageLayout.addWidget(self.originalImageLabel)
+
+        # 检测后图片显示标签
+        self.detectedImageLabel = QLabel(self)
+        self.detectedImageLabel.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.detectedImageLabel.setStyleSheet("""
             background-color: #f0f0f0;
             border: 2px dashed #ccc;
             border-radius: 8px;
         """)
-        self.imageLabel.setMinimumSize(600, 400)
+        self.detectedImageLabel.setMinimumSize(600, 400)
+        imageLayout.addWidget(self.detectedImageLabel)
 
         # 检测结果表格
         self.resultTable = TableWidget(self)
@@ -81,7 +99,7 @@ class DetectionInterface(ScrollArea):
         # 布局组装
         layout.addWidget(self.uploadBtn)
         layout.addSpacing(15)
-        layout.addWidget(self.imageLabel)
+        layout.addLayout(imageLayout)  # 添加水平布局
         layout.addSpacing(15)
         layout.addWidget(StrongBodyLabel("检测结果:"))
         layout.addWidget(self.resultTable)
@@ -92,47 +110,61 @@ class DetectionInterface(ScrollArea):
             self, "选择图片", "", "图像文件 (*.png *.jpg *.jpeg *.bmp)"
         )
         if path:
-            self.loadImage(path)
-            detection_results = self.runDetection(path)
+            self.loadOriginalImage(path)
+            detection_results, detected_image = self.runDetection(path)
+            self.displayDetectedImage(detected_image)
             self.displayDetectionResults(detection_results)
 
-    def loadImage(self, path: str):
+    def loadOriginalImage(self, path: str):
         pixmap = QPixmap(path)
         if pixmap.isNull():
             MessageBox("错误", "无法加载图片文件", self).exec()
             return
 
         scaled = pixmap.scaled(
-            self.imageLabel.size(),
+            self.originalImageLabel.size(),
             Qt.AspectRatioMode.KeepAspectRatio,
             Qt.TransformationMode.SmoothTransformation
         )
-        self.imageLabel.setPixmap(scaled)
+        self.originalImageLabel.setPixmap(scaled)
+        self.detectedImageLabel.clear() # 清空检测后的图片
 
-    def runDetection(self, image_path: str) -> list:
+    def displayDetectedImage(self, detected_image: Optional[np.ndarray]):
+        if detected_image is not None:
+            height, width, channel = detected_image.shape
+            bytes_per_line = 3 * width
+            q_image = QImage(detected_image.data, width, height, bytes_per_line, QImage.Format.Format_RGB888).rgbSwapped()
+            detected_pixmap = QPixmap.fromImage(q_image)
+
+            scaled_pixmap = detected_pixmap.scaled(
+                self.detectedImageLabel.size(),
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation
+            )
+            self.detectedImageLabel.setPixmap(scaled_pixmap)
+        else:
+            self.detectedImageLabel.setText("未检测到图片")
+            self.detectedImageLabel.setStyleSheet("""
+                background-color: #f0f0f0;
+                border: 2px dashed #ccc;
+                border-radius: 8px;
+                color: gray;
+            """)
+
+
+    def runDetection(self, image_path: str) -> Tuple[list, Optional[np.ndarray]]:
         results_list = []
+        detected_image_np = None
 
         if self.detection_model is None:
             MessageBox("错误", "检测模型尚未加载", self).exec()
-            return results_list
+            return results_list, detected_image_np
 
         self.progressBar.show()
         try:
             results = self.detection_model(image_path)
             res_plotted = results[0].plot()  # 获取带有标注的图片 (NumPy array)
-
-            # 将 OpenCV 图片转换为 QPixmap
-            height, width, channel = res_plotted.shape
-            bytes_per_line = 3 * width
-            q_image = QImage(res_plotted.data, width, height, bytes_per_line, QImage.Format.Format_RGB888).rgbSwapped()
-            detected_pixmap = QPixmap.fromImage(q_image)
-
-            scaled_pixmap = detected_pixmap.scaled(
-                self.imageLabel.size(),
-                Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.SmoothTransformation
-            )
-            self.imageLabel.setPixmap(scaled_pixmap)
+            detected_image_np = res_plotted.copy() # 保存检测后的图片
 
             # 提取检测结果
             if results and results[0].boxes and len(results[0].boxes.conf) > 0:
@@ -148,7 +180,7 @@ class DetectionInterface(ScrollArea):
             MessageBox("错误", f"检测过程中发生错误: {e}", self).exec()
         finally:
             self.progressBar.hide()
-            return results_list
+            return results_list, detected_image_np
 
     def displayDetectionResults(self, results: list):
         self.resultTable.clearContents()
