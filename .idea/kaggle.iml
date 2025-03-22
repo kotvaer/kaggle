@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<module type="PYTHON_MODULE" version="4">
+  <component name="NewModuleRootManager">
+    <content url="file://$MODULE_DIR$">
+      <excludeFolder url="file://$MODULE_DIR$/.venv" />
+      <excludeFolder url="file://$MODULE_DIR$/UML" />
+      <excludeFolder url="file://$MODULE_DIR$/input" />
+      <excludeFolder url="file://$MODULE_DIR$/models" />
+      <excludeFolder url="file://$MODULE_DIR$/runs" />
+      <excludeFolder url="file://$MODULE_DIR$/working" />
+      <excludeFolder url="file://$MODULE_DIR$/working/runs/detect/welding_v1_aug/weights" />
+      <excludeFolder url="file://$MODULE_DIR$/working/runs/detect/welding_v1_aug10/weights" />
+      <excludeFolder url="file://$MODULE_DIR$/working/runs/detect/welding_v1_aug11/weights" />
+      <excludeFolder url="file://$MODULE_DIR$/working/runs/detect/welding_v1_aug12/weights" />
+      <excludeFolder url="file://$MODULE_DIR$/working/runs/detect/welding_v1_aug13/weights" />
+      <excludeFolder url="file://$MODULE_DIR$/working/runs/detect/welding_v1_aug14/weights" />
+      <excludeFolder url="file://$MODULE_DIR$/working/runs/detect/welding_v1_aug15/weights" />
+      <excludeFolder url="file://$MODULE_DIR$/working/runs/detect/welding_v1_aug16/weights" />
+      <excludeFolder url="file://$MODULE_DIR$/working/runs/detect/welding_v1_aug2/weights" />
+      <excludeFolder url="file://$MODULE_DIR$/working/runs/detect/welding_v1_aug3/weights" />
+      <excludeFolder url="file://$MODULE_DIR$/working/runs/detect/welding_v1_aug4/weights" />
+      <excludeFolder url="file://$MODULE_DIR$/working/runs/detect/welding_v1_aug5/weights" />
+      <excludeFolder url="file://$MODULE_DIR$/working/runs/detect/welding_v1_aug6/weights" />
+      <excludeFolder url="file://$MODULE_DIR$/working/runs/detect/welding_v1_aug7/weights" />
+      <excludeFolder url="file://$MODULE_DIR$/working/runs/detect/welding_v1_aug8/weights" />
+      <excludeFolder url="file://$MODULE_DIR$/working/runs/detect/welding_v1_aug9/weights" />
+    </content>
+    <orderEntry type="jdk" jdkName="Python 3.9 virtualenv at ~/PycharmProjects/kaggle/.venv" jdkType="Python SDK" />
+    <orderEntry type="sourceFolder" forTests="false" />
+  </component>
+</module>

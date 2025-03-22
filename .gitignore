@@ -1,0 +1,7 @@
+*.pt
+working/
+input/
+runs/
+models/
+.venv/
+UML/
