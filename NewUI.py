@@ -7,7 +7,8 @@ from PyQt6.QtGui import QPixmap, QFont, QImage, QColor
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QLabel, QFileDialog,
     QHeaderView, QTableWidgetItem, QFormLayout, QSlider,
-    QDoubleSpinBox, QHBoxLayout, QCheckBox, QPushButton, QComboBox
+    QDoubleSpinBox, QHBoxLayout, QCheckBox, QPushButton, QComboBox,
+    QSpinBox
 )
 from qfluentwidgets import (
     FluentWindow, NavigationItemPosition, MessageBox,
@@ -26,8 +27,9 @@ class VideoDetectionInterface(ScrollArea):
     processedFrameReady = Signal(QImage)
     detectionFinished = Signal()
 
-    def __init__(self, parent: Optional[QWidget] = None):
+    def __init__(self, main_window, parent: Optional[QWidget] = None):
         super().__init__(parent)
+        self.main_window = main_window  # 保存 MainWindow 实例
         self.setObjectName("VideoDetectionInterface")
         self.view = QWidget(self)
         self.setWidget(self.view)
@@ -103,7 +105,9 @@ class VideoDetectionInterface(ScrollArea):
             self.startButton.setEnabled(False)
             self.stopButton.setEnabled(True)
             self.progressBar.show()
-            self.detection_thread = VideoDetectionThread(self.video_path, self.detection_model)
+            confidence_threshold = self.main_window.confidenceSpinBox.value()
+            max_detections = self.main_window.maxDetSpinBox.value()
+            self.detection_thread = VideoDetectionThread(self.video_path, self.detection_model, conf=confidence_threshold, max_det=max_detections)
             self.detection_thread.processedFrameReady.connect(self.updateVideoFrame) # type: ignore
             self.detection_thread.detectionFinished.connect(self.videoDetectionFinished) # type: ignore
             self.detection_thread.start()
@@ -136,11 +140,13 @@ class VideoDetectionThread(QThread):
     processedFrameReady = Signal(QImage)
     detectionFinished = Signal()
 
-    def __init__(self, video_path, model):
+    def __init__(self, video_path, model, conf=0.25, max_det=1000):
         super().__init__()
         self.video_path = video_path
         self.model = model
         self.stop_flag = False
+        self.conf = conf
+        self.max_det = max_det
 
     def run(self):
         cap = cv2.VideoCapture(self.video_path)
@@ -152,7 +158,7 @@ class VideoDetectionThread(QThread):
         while not self.stop_flag and cap.isOpened():
             success, frame = cap.read()
             if success:
-                results = self.model(frame)
+                results = self.model(frame, conf=self.conf, max_det=self.max_det)
                 annotated_frame = results[0].plot()
 
                 height, width, channel = annotated_frame.shape
@@ -171,8 +177,9 @@ class CameraDetectionInterface(ScrollArea):
     processedFrameReady = Signal(QImage)
     detectionFinished = Signal()
 
-    def __init__(self, parent: Optional[QWidget] = None):
+    def __init__(self, main_window, parent: Optional[QWidget] = None):
         super().__init__(parent)
+        self.main_window = main_window  # 保存 MainWindow 实例
         self.setObjectName("CameraDetectionInterface")
         self.view = QWidget(self)
         self.setWidget(self.view)
@@ -248,7 +255,9 @@ class CameraDetectionInterface(ScrollArea):
         if selected_camera_index != -1 and self.detection_model:
             self.startButton.setEnabled(False)
             self.stopButton.setEnabled(True)
-            self.detection_thread = CameraDetectionThread(selected_camera_index, self.detection_model)
+            confidence_threshold = self.main_window.confidenceSpinBox.value()
+            max_detections = self.main_window.maxDetSpinBox.value()
+            self.detection_thread = CameraDetectionThread(selected_camera_index, self.detection_model, conf=confidence_threshold, max_det=max_detections)
             self.detection_thread.processedFrameReady.connect(self.updateVideoFrame) # type: ignore
             self.detection_thread.detectionFinished.connect(self.cameraDetectionFinished) # type: ignore
             self.detection_thread.start()
@@ -279,11 +288,13 @@ class CameraDetectionThread(QThread):
     processedFrameReady = Signal(QImage)
     detectionFinished = Signal()
 
-    def __init__(self, camera_index, model):
+    def __init__(self, camera_index, model, conf=0.25, max_det=1000):
         super().__init__()
         self.camera_index = camera_index
         self.model = model
         self.stop_flag = False
+        self.conf = conf
+        self.max_det = max_det
 
     def run(self):
         cap = cv2.VideoCapture(self.camera_index)
@@ -295,7 +306,7 @@ class CameraDetectionThread(QThread):
         while not self.stop_flag and cap.isOpened():
             success, frame = cap.read()
             if success:
-                results = self.model(frame)
+                results = self.model(frame, conf=self.conf, max_det=self.max_det)
                 annotated_frame = results[0].plot()
 
                 height, width, channel = annotated_frame.shape
@@ -313,8 +324,9 @@ class CameraDetectionThread(QThread):
 class DetectionInterface(ScrollArea):
     detectionResultReady = Signal(list)  # 新的信号，用于发送检测结果列表
 
-    def __init__(self, parent: Optional[QWidget] = None):
+    def __init__(self, main_window, parent: Optional[QWidget] = None):
         super().__init__(parent)
+        self.main_window = main_window  # 保存 MainWindow 实例
         self.setObjectName("DetectionInterface")
         self.view = QWidget(self)
         self.setWidget(self.view)
@@ -328,7 +340,6 @@ class DetectionInterface(ScrollArea):
         self.detection_model = None  # 用于存储加载的 YOLO 模型
         self.resultTable: TableWidget  # 用于显示检测结果表格
         self.showDetectedOnlyCheckBox: QCheckBox  # 新增的复选框
-
         self.show_detected_only = False  # 默认不开启只显示检测结果
 
         self.initUI()
@@ -411,7 +422,9 @@ class DetectionInterface(ScrollArea):
         )
         if path:
             self.loadOriginalImage(path)
-            detection_results, detected_image = self.runDetection(path)
+            confidence_threshold = self.main_window.confidenceSpinBox.value() # 从 MainWindow 获取值
+            max_detections = self.main_window.maxDetSpinBox.value() # 从 MainWindow 获取值
+            detection_results, detected_image = self.runDetection(path, conf=confidence_threshold, max_det=max_detections)
             self.displayDetectedImage(detected_image)
             self.displayDetectionResults(detection_results)
             self.updateImageDisplay() # 初始加载后也更新显示
@@ -465,7 +478,7 @@ class DetectionInterface(ScrollArea):
             self.detectedImageLabel.show()
 
 
-    def runDetection(self, image_path: str) -> Tuple[list, Optional[np.ndarray]]:
+    def runDetection(self, image_path: str, conf: float = 0.25, max_det: int = 1000) -> Tuple[list, Optional[np.ndarray]]:
         results_list = []
         detected_image_np = None
 
@@ -475,7 +488,7 @@ class DetectionInterface(ScrollArea):
 
         self.progressBar.show()
         try:
-            results = self.detection_model(image_path)
+            results = self.detection_model(image_path, conf=conf, max_det=max_det)
             res_plotted = results[0].plot()  # 获取带有标注的图片 (NumPy array)
             detected_image_np = res_plotted.copy() # 保存检测后的图片
 
@@ -514,10 +527,19 @@ class MainWindow(FluentWindow):
         self.resize(1200, 800)
         setTheme(Theme.LIGHT)
 
+        # 设置自定义标题栏样式
+        self.titleBar.setStyleSheet("""
+            QLabel {
+                font-size: 20px; /* 增大字体 */
+                color: #3498db; /* 设置颜色为蓝色 */
+                padding-left: 15px; /* 增加左侧内边距 */
+            }
+        """)
+
         # 初始化界面
-        self.detectionInterface = DetectionInterface()
-        self.videoDetectionInterface = VideoDetectionInterface() # 创建视频检测界面
-        self.cameraDetectionInterface = CameraDetectionInterface() # 创建摄像头检测界面
+        self.detectionInterface = DetectionInterface(self) # 将 MainWindow 实例传递给 DetectionInterface
+        self.videoDetectionInterface = VideoDetectionInterface(self) # 将 MainWindow 实例传递给 VideoDetectionInterface
+        self.cameraDetectionInterface = CameraDetectionInterface(self) # 将 MainWindow 实例传递给 CameraDetectionInterface
         self.settingsInterface = QWidget()
         self.settingsInterface.setObjectName("SettingsInterface")
 
@@ -550,17 +572,19 @@ class MainWindow(FluentWindow):
     def initSettings(self):
         layout = QFormLayout(self.settingsInterface)
 
-        # 灵敏度设置
-        self.sensitivitySlider = QSlider(Qt.Orientation.Horizontal)
-        self.sensitivitySlider.setRange(1, 10)
-        self.sensitivitySlider.setValue(5)
-        layout.addRow(StrongBodyLabel("检测灵敏度:"), self.sensitivitySlider)
+        # 置信度阈值调节
+        self.confidenceSpinBox = QDoubleSpinBox(self)
+        self.confidenceSpinBox.setRange(0.0, 1.0)
+        self.confidenceSpinBox.setSingleStep(0.01)
+        self.confidenceSpinBox.setValue(0.25)  # 设置默认值
+        layout.addRow(StrongBodyLabel("置信度阈值:"), self.confidenceSpinBox)
 
-        # 阈值设置
-        self.thresholdSpinBox = QDoubleSpinBox()
-        self.thresholdSpinBox.setRange(0.1, 10.0)
-        self.thresholdSpinBox.setValue(2.5)
-        layout.addRow(StrongBodyLabel("报警阈值(mm):"), self.thresholdSpinBox)
+        # 最大检测数量调节
+        self.maxDetSpinBox = QSpinBox(self)
+        self.maxDetSpinBox.setRange(1, 10000)  # 设置一个合理的范围
+        self.maxDetSpinBox.setSingleStep(10)
+        self.maxDetSpinBox.setValue(1000)  # 设置默认值
+        layout.addRow(StrongBodyLabel("最大检测数量:"), self.maxDetSpinBox)
 
         # 保存按钮
         self.saveBtn = PrimaryPushButton("保存设置")
@@ -568,11 +592,11 @@ class MainWindow(FluentWindow):
         layout.addRow(self.saveBtn)
 
     def saveSettings(self):
-        sens = self.sensitivitySlider.value()
-        threshold = self.thresholdSpinBox.value()
+        conf = self.confidenceSpinBox.value()
+        max_det = self.maxDetSpinBox.value()
         MessageBox(
             "设置已保存",
-            f"当前设置：\n灵敏度等级: {sens}\n报警阈值: {threshold}mm",
+            f"当前设置：\n置信度阈值: {conf}\n最大检测数量: {max_det}",
             self
         ).exec()
 
