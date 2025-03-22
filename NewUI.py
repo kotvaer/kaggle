@@ -7,7 +7,7 @@ from PyQt6.QtGui import QPixmap, QFont, QImage, QColor
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QLabel, QFileDialog,
     QHeaderView, QTableWidgetItem, QFormLayout, QSlider,
-    QDoubleSpinBox, QHBoxLayout, QCheckBox
+    QDoubleSpinBox, QHBoxLayout, QCheckBox, QPushButton
 )
 from qfluentwidgets import (
     FluentWindow, NavigationItemPosition, MessageBox,
@@ -20,6 +20,151 @@ from ultralytics import YOLO
 import cv2
 import numpy as np
 import dill
+
+# ========================== 视频检测界面 ==========================
+class VideoDetectionInterface(ScrollArea):
+    processedFrameReady = Signal(QImage)
+    detectionFinished = Signal()
+
+    def __init__(self, parent: Optional[QWidget] = None):
+        super().__init__(parent)
+        self.setObjectName("VideoDetectionInterface")
+        self.view = QWidget(self)
+        self.setWidget(self.view)
+        self.setWidgetResizable(True)
+
+        self.uploadVideoButton: PrimaryPushButton
+        self.videoDisplayLabel: QLabel
+        self.startButton: PrimaryPushButton
+        self.stopButton: PrimaryPushButton
+        self.progressBar: IndeterminateProgressBar
+
+        self.video_path = None
+        self.detection_model = None
+        self.detection_thread = None
+
+        self.initUI()
+        self.loadDetectionModel()
+
+    def loadDetectionModel(self):
+        path = 'models/best.pt'  # 确保模型文件路径正确
+        try:
+            self.detection_model = YOLO(path, task='detect')
+        except Exception as e:
+            MessageBox("错误", f"加载模型失败: {e}", self).exec()
+
+    def initUI(self):
+        layout = QVBoxLayout(self.view)
+
+        self.uploadVideoButton = PrimaryPushButton("选择视频文件", self)
+        self.uploadVideoButton.setIcon(FIF.FOLDER)
+        self.uploadVideoButton.clicked.connect(self.selectVideoFile) # type: ignore
+        layout.addWidget(self.uploadVideoButton)
+
+        self.videoDisplayLabel = QLabel(self)
+        self.videoDisplayLabel.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.videoDisplayLabel.setStyleSheet("""
+            background-color: #333;
+            color: #fff;
+            border-radius: 8px;
+        """)
+        self.videoDisplayLabel.setMinimumSize(640, 480)
+        layout.addWidget(self.videoDisplayLabel)
+
+        controlsLayout = QHBoxLayout()
+        self.startButton = PrimaryPushButton("开始检测", self)
+        self.startButton.clicked.connect(self.startVideoDetection) # type: ignore
+        self.startButton.setEnabled(False)
+        controlsLayout.addWidget(self.startButton)
+
+        self.stopButton = PrimaryPushButton("停止检测", self)
+        self.stopButton.clicked.connect(self.stopVideoDetection) # type: ignore
+        self.stopButton.setEnabled(False)
+        controlsLayout.addWidget(self.stopButton)
+        layout.addLayout(controlsLayout)
+
+        self.progressBar = IndeterminateProgressBar(self)
+        self.progressBar.hide()
+        layout.addWidget(self.progressBar)
+
+    def selectVideoFile(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, "选择视频文件", "", "视频文件 (*.mp4 *.avi *.mov *.mkv)"
+        )
+        if path:
+            self.video_path = path
+            self.startButton.setEnabled(True)
+            self.videoDisplayLabel.setText(f"已选择视频: {path.split('/')[-1]}")
+            if self.detection_thread and self.detection_thread.isRunning():
+                self.stopVideoDetection()
+
+    def startVideoDetection(self):
+        if self.video_path and self.detection_model:
+            self.startButton.setEnabled(False)
+            self.stopButton.setEnabled(True)
+            self.progressBar.show()
+            self.detection_thread = VideoDetectionThread(self.video_path, self.detection_model)
+            self.detection_thread.processedFrameReady.connect(self.updateVideoFrame) # type: ignore
+            self.detection_thread.detectionFinished.connect(self.videoDetectionFinished) # type: ignore
+            self.detection_thread.start()
+
+    def stopVideoDetection(self):
+        if self.detection_thread and self.detection_thread.isRunning():
+            self.detection_thread.stop_flag = True
+            self.startButton.setEnabled(True)
+            self.stopButton.setEnabled(False)
+            self.progressBar.hide()
+
+    def updateVideoFrame(self, frame: QImage):
+        pixmap = QPixmap.fromImage(frame)
+        scaled_pixmap = pixmap.scaled(
+            self.videoDisplayLabel.size(),
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation
+        )
+        self.videoDisplayLabel.setPixmap(scaled_pixmap)
+
+    def videoDetectionFinished(self):
+        self.startButton.setEnabled(True)
+        self.stopButton.setEnabled(False)
+        self.progressBar.hide()
+        self.videoDisplayLabel.setText("视频检测完成")
+        self.detection_thread = None
+
+# ========================== 视频检测线程 ==========================
+class VideoDetectionThread(QThread):
+    processedFrameReady = Signal(QImage)
+    detectionFinished = Signal()
+
+    def __init__(self, video_path, model):
+        super().__init__()
+        self.video_path = video_path
+        self.model = model
+        self.stop_flag = False
+
+    def run(self):
+        cap = cv2.VideoCapture(self.video_path)
+        if not cap.isOpened():
+            print(f"Error: Could not open video at {self.video_path}")
+            self.detectionFinished.emit()
+            return
+
+        while not self.stop_flag and cap.isOpened():
+            success, frame = cap.read()
+            if success:
+                results = self.model(frame)
+                annotated_frame = results[0].plot()
+
+                height, width, channel = annotated_frame.shape
+                bytes_per_line = 3 * width
+                q_image = QImage(annotated_frame.data, width, height, bytes_per_line, QImage.Format.Format_RGB888).rgbSwapped()
+                self.processedFrameReady.emit(q_image)
+            else:
+                break
+            time.sleep(0.03) # 控制帧率，避免过快
+
+        cap.release()
+        self.detectionFinished.emit()
 
 # ========================== 检测界面 ==========================
 class DetectionInterface(ScrollArea):
@@ -228,14 +373,20 @@ class MainWindow(FluentWindow):
 
         # 初始化界面
         self.detectionInterface = DetectionInterface()
+        self.videoDetectionInterface = VideoDetectionInterface() # 创建视频检测界面
         self.settingsInterface = QWidget()
         self.settingsInterface.setObjectName("SettingsInterface")
 
         # 添加导航
         self.addSubInterface(
             self.detectionInterface,
+            FIF.PHOTO,
+            "图片检测"
+        )
+        self.addSubInterface(
+            self.videoDetectionInterface,
             FIF.VIDEO,
-            "焊缝检测"
+            "视频检测"
         )
         self.addSubInterface(
             self.settingsInterface,
