@@ -361,7 +361,7 @@ class DetectionInterface(ScrollArea):
             border: 1px solid #ccc;
             border-radius: 4px;
         """)
-        self.originalImageLabel.setMinimumSize(600, 400)
+        self.originalImageLabel.setMinimumSize(500, 400)
         imageLayout.addWidget(self.originalImageLabel)
 
         # 检测后图片显示标签
@@ -372,7 +372,7 @@ class DetectionInterface(ScrollArea):
             border: 2px dashed #ccc;
             border-radius: 8px;
         """)
-        self.detectedImageLabel.setMinimumSize(600, 400)
+        self.detectedImageLabel.setMinimumSize(500, 400)
         imageLayout.addWidget(self.detectedImageLabel)
 
         # 只显示检测结果复选框
