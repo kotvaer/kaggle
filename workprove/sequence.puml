@@ -1,0 +1,55 @@
+@startuml CompleteSequenceDiagram
+
+actor User
+participant MainWindow
+participant DetectionInterface
+participant VideoDetectionInterface
+participant CameraDetectionInterface
+participant DetectionThread
+participant VideoDetectionThread
+participant CameraDetectionThread
+participant YOLOModel
+
+group 图片检测流程
+User -> DetectionInterface: 上传图片
+DetectionInterface -> DetectionInterface: uploadImage()
+DetectionInterface -> YOLOModel: runDetection(图片路径)
+YOLOModel --> DetectionInterface: 返回检测结果
+DetectionInterface -> DetectionInterface: displayResults()
+DetectionInterface -> MainWindow: 更新图片显示
+end
+
+group 视频检测流程
+User -> VideoDetectionInterface: 选择视频文件
+VideoDetectionInterface -> VideoDetectionThread: 创建视频线程
+VideoDetectionThread -> VideoDetectionThread: 打开视频文件
+loop 逐帧处理
+VideoDetectionThread -> YOLOModel: processFrame()
+YOLOModel --> VideoDetectionThread: 标注结果
+VideoDetectionThread -> VideoDetectionInterface: 发送处理帧
+VideoDetectionInterface -> VideoDetectionInterface: 更新视频显示
+end
+User -> VideoDetectionInterface: 点击「停止」
+VideoDetectionInterface -> VideoDetectionThread: 终止线程
+end
+
+group 实时检测流程
+User -> CameraDetectionInterface: 选择摄像头
+CameraDetectionInterface -> CameraDetectionInterface: 初始化设备列表
+User -> CameraDetectionInterface: 点击「开始检测」
+CameraDetectionInterface -> CameraDetectionThread: 创建摄像头线程
+CameraDetectionThread -> CameraDetectionThread: 开启摄像头
+loop 实时帧处理
+CameraDetectionThread -> YOLOModel: processRealTimeFrame()
+YOLOModel --> CameraDetectionThread: 实时标注结果
+CameraDetectionThread -> CameraDetectionInterface: 发送实时帧
+CameraDetectionInterface -> CameraDetectionInterface: 更新摄像头显示
+end
+User -> CameraDetectionInterface: 点击「停止」
+CameraDetectionInterface -> CameraDetectionThread: 终止线程
+end
+
+MainWindow -> AllInterfaces: 全局设置更新\n(置信度/最大检测数)
+
+@enduml
+

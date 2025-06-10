@@ -1,13 +1,14 @@
 import sys
 import time
-from typing import Optional, Dict, Tuple
+from typing import Optional, Tuple
 
+import cv2
+import numpy as np
 from PyQt6.QtCore import Qt, QThread, pyqtSignal as Signal
-from PyQt6.QtGui import QPixmap, QFont, QImage, QColor
+from PyQt6.QtGui import QPixmap, QFont, QImage
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QLabel, QFileDialog,
-    QHeaderView, QTableWidgetItem, QFormLayout, QSlider,
-    QDoubleSpinBox, QHBoxLayout, QCheckBox, QPushButton, QComboBox,
+    QHeaderView, QTableWidgetItem, QFormLayout, QDoubleSpinBox, QHBoxLayout, QCheckBox, QComboBox,
     QSpinBox
 )
 from qfluentwidgets import (
@@ -15,12 +16,8 @@ from qfluentwidgets import (
     IndeterminateProgressBar, ScrollArea, PrimaryPushButton,
     StrongBodyLabel, TableWidget, setTheme, Theme, FluentIcon as FIF
 )
-
-import torch
 from ultralytics import YOLO
-import cv2
-import numpy as np
-import dill
+
 
 # ========================== 视频检测界面 ==========================
 class VideoDetectionInterface(ScrollArea):

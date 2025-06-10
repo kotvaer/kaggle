@@ -1,0 +1,50 @@
+@startuml ClassDiagram
+
+class MainWindow {
+  - detectionInterface: DetectionInterface
+  - videoDetectionInterface: VideoDetectionInterface
+  - cameraDetectionInterface: CameraDetectionInterface
+  - settingsInterface: QWidget
+  + initSettings()
+}
+
+class DetectionInterface {
+  - main_window: MainWindow
+  + runDetection()
+  + displayResults()
+}
+
+class VideoDetectionInterface {
+  - main_window: MainWindow
+  + startVideoDetection()
+  + stopVideoDetection()
+}
+
+class CameraDetectionInterface {
+  - main_window: MainWindow
+  + startCameraDetection()
+  + stopCameraDetection()
+}
+
+class VideoDetectionThread {
+  - model: YOLO
+  + run()
+}
+
+class CameraDetectionThread {
+  - model: YOLO
+  + run()
+}
+
+MainWindow --> DetectionInterface
+MainWindow --> VideoDetectionInterface
+MainWindow --> CameraDetectionInterface
+
+VideoDetectionInterface --> VideoDetectionThread
+CameraDetectionInterface --> CameraDetectionThread
+
+DetectionInterface ..> YOLO: uses
+VideoDetectionThread ..> YOLO: uses
+CameraDetectionThread ..> YOLO: uses
+
+@enduml
